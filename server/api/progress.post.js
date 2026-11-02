@@ -1,9 +1,10 @@
 export default defineEventHandler(async (event) => {
   const body = await readBody(event)
+  const config = useRuntimeConfig(event)
   const authHeader = getHeader(event, 'authorization')
 
   try {
-    const response = await $fetch('http://222.243.213.67:17770/api/progress', {
+    const response = await $fetch(`${config.gameApiBase || 'http://222.243.213.67:17770'}/api/progress`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',

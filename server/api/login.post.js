@@ -1,8 +1,9 @@
 export default defineEventHandler(async (event) => {
   const body = await readBody(event)
+  const config = useRuntimeConfig(event)
 
   try {
-    const response = await $fetch('http://222.243.213.67:17770/api/login', {
+    const response = await $fetch(`${config.gameApiBase || 'http://222.243.213.67:17770'}/api/login`, {
       method: 'POST',
       body: {
         name: body.name,

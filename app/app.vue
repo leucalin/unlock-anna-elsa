@@ -1,1130 +1,1125 @@
-<template>
-  <div class="app-container">
-    <div class="container">
-      <div class="header">
-        <h1>🔐 关卡进度查询系统</h1>
-        <p class="subtitle">快速查询和管理你的通关进度</p>
-      </div>
-
-      <form @submit.prevent="handleLogin" class="login-form">
-        <div class="form-group">
-          <label for="username">👤 姓名</label>
-          <input
-            type="text"
-            id="username"
-            v-model="username"
-            placeholder="请输入姓名"
-            required
-          />
-        </div>
-
-        <div class="form-group">
-          <label for="password">🔑 密码</label>
-          <div class="password-wrapper">
-            <input
-              type="password"
-              id="password"
-              v-model="password"
-              placeholder="请输入密码"
-              required
-            />
-            <span class="password-hint">已填入默认密码</span>
-          </div>
-        </div>
-
-        <button type="submit" class="btn btn-primary" :disabled="loading">
-          <span v-if="loading" class="loading-spinner"></span>
-          {{ loading ? '查询中...' : '🚀 查询进度' }}
-        </button>
-      </form>
-
-      <div v-if="result" class="result">
-        <div class="result-header">
-          <div class="result-title">
-            <h2>✅ 查询结果</h2>
-            <span class="user-badge">{{ result.user.name }}</span>
-          </div>
-          <div class="action-buttons">
-            <button @click="setAllComplete" class="btn-action btn-complete" title="将所有关卡设为3星">
-              <span class="btn-icon">🏆</span>
-              <span class="btn-text">全部通关</span>
-            </button>
-            <button @click="resetAll" class="btn-action btn-reset" title="清空所有进度">
-              <span class="btn-icon">🔄</span>
-              <span class="btn-text">全部清零</span>
-            </button>
-            <button @click="showCustomModal = true" class="btn-action btn-custom" title="自定义修改进度">
-              <span class="btn-icon">⚙️</span>
-              <span class="btn-text">自定义修改</span>
-            </button>
-          </div>
-        </div>
-
-        <div class="info-grid">
-          <div class="info-card">
-            <div class="info-icon">👤</div>
-            <div class="info-content">
-              <div class="info-label">用户信息</div>
-              <div class="info-details">
-                <span class="info-item">{{ result.user.name }}</span>
-                <span class="info-divider">·</span>
-                <span class="info-item">{{ result.user.gender }}</span>
-                <span class="info-divider">·</span>
-                <span class="info-item">{{ result.user.cls }}班</span>
-              </div>
-            </div>
-          </div>
-
-          <div class="info-card">
-            <div class="info-icon">🎮</div>
-            <div class="info-content">
-              <div class="info-label">关卡进度</div>
-              <div class="info-details">
-                <span class="info-item highlight">已通关 {{ completedCount }} 关</span>
-                <span class="info-divider">·</span>
-                <span class="info-item highlight">当前第 {{ editableProgress.unlocked }} 关</span>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <div class="levels-section">
-          <div class="section-header">
-            <h3>⭐ 各关卡星级</h3>
-            <div class="progress-bar">
-              <div class="progress-fill" :style="{ width: (completedCount / TOTAL_LEVELS * 100) + '%' }"></div>
-              <span class="progress-text">{{ Math.round(completedCount / TOTAL_LEVELS * 100) }}% 完成</span>
-            </div>
-          </div>
-          <div class="stars-grid">
-            <div
-              v-for="level in TOTAL_LEVELS"
-              :key="level"
-              class="level-card"
-              :class="{
-                unlocked: level === editableProgress.unlocked,
-                completed: editableProgress.stars[level]
-              }"
-            >
-              <div class="level-number">{{ level }}</div>
-              <div class="stars" :style="getStarStyle(level)">
-                {{ getStarDisplay(level) }}
-              </div>
-              <div
-                v-if="level === editableProgress.unlocked"
-                class="unlocked-badge"
-              >
-                当前
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <div class="token-section">
-          <details>
-            <summary>🔑 查看 Token</summary>
-            <code class="token-code">{{ result.token }}</code>
-          </details>
-        </div>
-      </div>
-
-      <transition name="fade">
-        <div v-if="error" class="alert alert-error">
-          <span class="alert-icon">❌</span>
-          {{ error }}
-        </div>
-      </transition>
-
-      <transition name="fade">
-        <div v-if="successMsg" class="alert alert-success">
-          <span class="alert-icon">✅</span>
-          {{ successMsg }}
-        </div>
-      </transition>
-
-      <!-- 自定义修改弹窗 -->
-      <transition name="modal">
-        <div v-if="showCustomModal" class="modal-overlay" @click="closeModal">
-          <div class="modal-content" @click.stop>
-            <div class="modal-header">
-              <h3>⚙️ 自定义修改</h3>
-              <button @click="closeModal" class="modal-close">×</button>
-            </div>
-
-            <div class="modal-body">
-              <div class="modal-section">
-                <label class="modal-label">📍 当前关卡</label>
-                <div class="level-select">
-                  <label
-                    v-for="level in TOTAL_LEVELS"
-                    :key="'unlock-' + level"
-                    class="radio-label"
-                    :class="{ active: customUnlocked === level }"
-                  >
-                    <input
-                      type="radio"
-                      :value="level"
-                      v-model="customUnlocked"
-                      name="unlocked"
-                    />
-                    {{ level }}
-                  </label>
-                </div>
-              </div>
-
-              <div class="modal-section">
-                <label class="modal-label">⭐ 修改星星</label>
-                <div class="star-controls">
-                  <div class="level-checkboxes">
-                    <label
-                      v-for="level in TOTAL_LEVELS"
-                      :key="'star-' + level"
-                      class="checkbox-label"
-                      :class="{ active: selectedLevels.includes(level) }"
-                    >
-                      <input
-                        type="checkbox"
-                        :value="level"
-                        v-model="selectedLevels"
-                      />
-                      关卡{{ level }}
-                    </label>
-                  </div>
-                  <div class="star-input-group">
-                    <label>星星数：</label>
-                    <div class="star-selector">
-                      <button
-                        v-for="n in [0, 1, 2, 3]"
-                        :key="n"
-                        type="button"
-                        @click="starCount = n"
-                        class="star-btn"
-                        :class="{ active: starCount === n }"
-                      >
-                        {{ n === 0 ? '清空' : '★'.repeat(n) }}
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <div class="modal-actions">
-              <button @click="updateUnlocked" class="btn-modal btn-primary" :disabled="saving">
-                {{ saving ? '保存中...' : '修改当前关卡' }}
-              </button>
-              <button @click="updateStars" class="btn-modal btn-primary" :disabled="saving || selectedLevels.length === 0">
-                {{ saving ? '保存中...' : '修改星星数' }}
-              </button>
-              <button @click="closeModal" class="btn-modal btn-secondary">
-                关闭
-              </button>
-            </div>
-          </div>
-        </div>
-      </transition>
-    </div>
-  </div>
-</template>
-
 <script setup>
-const username = ref('')
-const password = ref('123456')
-const loading = ref(false)
-const saving = ref(false)
-const result = ref(null)
-const error = ref('')
-const successMsg = ref('')
-const editableProgress = ref({ stars: {}, unlocked: 1 })
-const showCustomModal = ref(false)
-const customUnlocked = ref(1)
-const selectedLevels = ref([])
-const starCount = ref(3)
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { useSpringValue } from '~/composables/useSpring'
 
 const TOTAL_LEVELS = 20
 
-const completedCount = computed(() => {
-  if (!editableProgress.value) return 0
-  return Object.keys(editableProgress.value.stars).length
-})
+const session = ref(null)
+const loading = ref(false)
+const loginError = ref('')
+const saving = ref(false)
+const saveStatus = ref('idle')
+const showToken = ref(false)
+const sheetOpen = ref(false)
+const certOpen = ref(false)
+const sheetTarget = ref(null)
+const scrolled = ref(false)
+const sentinel = ref(null)
+const toasts = ref([])
 
-const handleLogin = async () => {
+let toastSeq = 0
+let savedTimer = null
+let scrollObserver = null
+const toastTimers = new Map()
+
+const progress = computed(() => session.value?.progress || { stars: {}, unlocked: 1 })
+const stars = computed(() => progress.value.stars || {})
+const unlocked = computed(() => Number(progress.value.unlocked) || 1)
+const completedCount = computed(() => Object.keys(stars.value).length)
+const remaining = computed(() => Math.max(0, TOTAL_LEVELS - completedCount.value))
+const threeStarCount = computed(
+  () => Object.values(stars.value).filter((value) => Number(value) === 3).length,
+)
+const percent = computed(() =>
+  Math.min(100, Math.round((completedCount.value / TOTAL_LEVELS) * 100)),
+)
+const userInitial = computed(() => (session.value?.user?.name || '?').trim().charAt(0))
+
+const animatedPercent = useSpringValue(() => percent.value, {
+  response: 0.7,
+  dampingRatio: 1,
+})
+const displayPercent = computed(() => Math.round(animatedPercent.value))
+const ringValue = computed(() => animatedPercent.value / 100)
+
+function describeError(error, fallback) {
+  const status = error?.statusCode ?? error?.status
+  if (status === 500 || status === 502 || status === 503) {
+    return '服务暂时不可用，请稍后重试。'
+  }
+  if (/fetch|network|socket|timed? ?out/i.test(error?.message || '')) {
+    return '网络连接失败，请检查网络后重试。'
+  }
+  return fallback
+}
+
+function pushToast({ tone = 'neutral', message, action = null, duration = 6000 }) {
+  const id = ++toastSeq
+  toasts.value.push({ id, tone, message, action })
+  const timer = setTimeout(() => dismissToast(id), duration)
+  toastTimers.set(id, timer)
+  return id
+}
+
+function dismissToast(id) {
+  const timer = toastTimers.get(id)
+  if (timer) clearTimeout(timer)
+  toastTimers.delete(id)
+  toasts.value = toasts.value.filter((toast) => toast.id !== id)
+}
+
+function handleToastAction(toast) {
+  dismissToast(toast.id)
+  toast.action?.handler?.()
+}
+
+function cloneProgress(value) {
+  const source = value || {}
+  return {
+    stars: { ...(source.stars || {}) },
+    unlocked: Number(source.unlocked) || 1,
+  }
+}
+
+function setProgress(next) {
+  if (!session.value) return
+  session.value = { ...session.value, progress: cloneProgress(next) }
+}
+
+async function handleLogin({ name, password }) {
   loading.value = true
-  error.value = ''
-  successMsg.value = ''
-  result.value = null
+  loginError.value = ''
 
   try {
     const data = await $fetch('/api/login', {
       method: 'POST',
-      body: {
-        name: username.value,
-        pwd: password.value,
-      },
+      body: { name, pwd: password },
     })
 
-    if (data.ok) {
-      result.value = data
-      editableProgress.value = JSON.parse(JSON.stringify(data.progress))
-      customUnlocked.value = data.progress.unlocked
-    } else {
-      throw new Error('登录失败，请检查用户名和密码')
+    if (!data?.ok) {
+      loginError.value = '未找到该用户，请检查姓名与密码。'
+      return
     }
-  } catch (err) {
-    error.value = '❌ 错误：' + err.message
+
+    session.value = data
+    saveStatus.value = 'idle'
+    showToken.value = false
+  } catch (error) {
+    loginError.value = describeError(error, '查询失败，请检查姓名与密码后重试。')
   } finally {
     loading.value = false
   }
 }
 
-const setAllComplete = async () => {
-  const newProgress = {
-    stars: {},
-    unlocked: 20
-  }
-
-  for (let i = 1; i <= TOTAL_LEVELS; i++) {
-    newProgress.stars[i] = 3
-  }
-
-  await saveProgressToServer(newProgress)
+function logout() {
+  session.value = null
+  loginError.value = ''
+  sheetOpen.value = false
+  sheetTarget.value = null
+  certOpen.value = false
+  showToken.value = false
+  saveStatus.value = 'idle'
+  pushToast({ tone: 'neutral', message: '已退出查询' })
 }
 
-const resetAll = async () => {
-  const newProgress = {
-    stars: {},
-    unlocked: 1
-  }
+async function persist(next) {
+  if (!session.value) return false
 
-  await saveProgressToServer(newProgress)
-}
+  // An older "撤销" would clobber this newer edit; retire it as soon as a new save starts.
+  toasts.value.filter((toast) => toast.action).forEach((toast) => dismissToast(toast.id))
 
-const updateUnlocked = async () => {
-  const newProgress = JSON.parse(JSON.stringify(editableProgress.value))
-  newProgress.unlocked = customUnlocked.value
-
-  for (let i = 1; i < customUnlocked.value; i++) {
-    newProgress.stars[i] = 3
-  }
-
-  await saveProgressToServer(newProgress)
-}
-
-const updateStars = async () => {
-  if (selectedLevels.value.length === 0) {
-    error.value = '❌ 请至少选择一个关卡'
-    setTimeout(() => { error.value = '' }, 3000)
-    return
-  }
-
-  const newProgress = JSON.parse(JSON.stringify(editableProgress.value))
-
-  selectedLevels.value.forEach(level => {
-    if (starCount.value === 0) {
-      delete newProgress.stars[level]
-    } else {
-      newProgress.stars[level] = starCount.value
-    }
-  })
-
-  await saveProgressToServer(newProgress)
-  selectedLevels.value = []
-}
-
-const saveProgressToServer = async (newProgress) => {
+  const previous = cloneProgress(progress.value)
+  setProgress(next)
   saving.value = true
-  error.value = ''
-  successMsg.value = ''
+  saveStatus.value = 'saving'
 
   try {
     await $fetch('/api/progress', {
       method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${result.value.token}`
-      },
-      body: {
-        progress: newProgress
-      }
+      headers: { Authorization: `Bearer ${session.value.token}` },
+      body: { progress: next },
     })
-
-    result.value.progress = JSON.parse(JSON.stringify(newProgress))
-    editableProgress.value = JSON.parse(JSON.stringify(newProgress))
-    customUnlocked.value = newProgress.unlocked
-
-    successMsg.value = '✅ 进度保存成功！'
-    setTimeout(() => {
-      successMsg.value = ''
-    }, 3000)
-  } catch (err) {
-    error.value = '❌ 保存失败：' + err.message
+    saveStatus.value = 'saved'
+    clearTimeout(savedTimer)
+    savedTimer = setTimeout(() => {
+      if (saveStatus.value === 'saved') saveStatus.value = 'idle'
+    }, 2400)
+    return true
+  } catch (error) {
+    setProgress(previous)
+    saveStatus.value = 'error'
+    pushToast({
+      tone: 'error',
+      message: describeError(error, '保存失败，已恢复修改前的进度。'),
+    })
+    return false
   } finally {
     saving.value = false
   }
 }
 
-const closeModal = () => {
-  showCustomModal.value = false
-  selectedLevels.value = []
-}
-
-const getStarDisplay = (level) => {
-  if (!editableProgress.value) return ''
-
-  const stars = editableProgress.value.stars[level]
-  if (stars) {
-    return '★'.repeat(stars) + '☆'.repeat(3 - stars)
-  } else if (level === editableProgress.value.unlocked) {
-    return '☆☆☆'
-  } else {
-    return '🔒'
+async function undoTo(previous) {
+  if (saving.value) return
+  if (await persist(previous)) {
+    pushToast({ tone: 'neutral', message: '已撤销修改' })
   }
 }
 
-const getStarStyle = (level) => {
-  if (!editableProgress.value) return {}
+async function setAllComplete() {
+  if (saving.value) return
 
-  const stars = editableProgress.value.stars[level]
-  if (stars) {
-    return { color: '#ffd700' }
-  } else if (level === editableProgress.value.unlocked) {
-    return { color: '#ffd700' }
-  } else {
-    return { color: '#ccc' }
+  const previous = cloneProgress(progress.value)
+  const next = { unlocked: TOTAL_LEVELS, stars: {} }
+  for (let level = 1; level <= TOTAL_LEVELS; level += 1) next.stars[level] = 3
+
+  if (await persist(next)) {
+    pushToast({
+      tone: 'success',
+      message: '已把全部关卡设为 3 星',
+      action: { label: '撤销', handler: () => undoTo(previous) },
+      duration: 8000,
+    })
   }
 }
+
+async function resetAll() {
+  if (saving.value) return
+
+  const previous = cloneProgress(progress.value)
+  if (await persist({ unlocked: 1, stars: {} })) {
+    pushToast({
+      tone: 'neutral',
+      message: '已清空全部进度',
+      action: { label: '撤销', handler: () => undoTo(previous) },
+      duration: 8000,
+    })
+  }
+}
+
+async function setCurrentLevel(level) {
+  if (saving.value) return
+
+  const next = cloneProgress(progress.value)
+  next.unlocked = level
+  for (let index = 1; index < level; index += 1) next.stars[index] = 3
+
+  if (await persist(next)) {
+    pushToast({ tone: 'success', message: `当前关卡已设为第 ${level} 关` })
+  }
+}
+
+async function applyStars({ levels, stars: count }) {
+  if (saving.value || !levels.length) return
+
+  const next = cloneProgress(progress.value)
+  for (const level of levels) {
+    if (count === 0) delete next.stars[level]
+    else next.stars[level] = count
+  }
+
+  const label =
+    levels.length > 4 ? `${levels.length} 关` : `第 ${levels.join('、')} 关`
+
+  if (await persist(next)) {
+    pushToast({
+      tone: 'success',
+      message: count === 0 ? `已清除${label}的星级` : `${label}已设为 ${count} 星`,
+    })
+  }
+}
+
+function openSheet(level = null) {
+  sheetTarget.value = level
+  sheetOpen.value = true
+}
+
+function closeSheet() {
+  sheetOpen.value = false
+  sheetTarget.value = null
+}
+
+async function copyToken() {
+  const token = session.value?.token
+  if (!token) return
+
+  try {
+    await navigator.clipboard.writeText(token)
+    pushToast({ tone: 'success', message: '访问令牌已复制' })
+  } catch {
+    pushToast({ tone: 'error', message: '复制失败，请手动选择令牌文本' })
+  }
+}
+
+onMounted(() => {
+  if (!sentinel.value) return
+  scrollObserver = new IntersectionObserver(
+    ([entry]) => {
+      scrolled.value = !entry.isIntersecting
+    },
+    { threshold: 1 },
+  )
+  scrollObserver.observe(sentinel.value)
+})
+
+onBeforeUnmount(() => {
+  scrollObserver?.disconnect()
+  clearTimeout(savedTimer)
+  toastTimers.forEach((timer) => clearTimeout(timer))
+  toastTimers.clear()
+})
 </script>
 
+<template>
+  <div class="app">
+    <div class="ambient" aria-hidden="true" />
+    <div ref="sentinel" class="scroll-sentinel" aria-hidden="true" />
+
+    <header class="topbar" :class="{ 'is-scrolled': scrolled }">
+      <div class="topbar__inner">
+        <div class="brand">
+          <span class="brand__mark" aria-hidden="true">
+            <UiIcon name="snowflake" :size="17" :stroke-width="2" />
+          </span>
+          <span class="brand__text">
+            <span class="brand__name">Anna &amp; Elsa</span>
+            <span class="brand__sub">关卡进度</span>
+          </span>
+        </div>
+
+        <div v-if="session" class="topbar__user">
+          <span class="user-chip">
+            <span class="user-chip__avatar" aria-hidden="true">{{ userInitial }}</span>
+            <span class="user-chip__name">{{ session.user.name }}</span>
+            <span class="user-chip__class">{{ session.user.cls }} 班</span>
+          </span>
+          <button class="icon-btn" type="button" aria-label="退出查询" title="退出查询" @click="logout">
+            <UiIcon name="logout" :size="18" />
+          </button>
+        </div>
+      </div>
+    </header>
+
+    <main class="main" :class="{ 'main--login': !session }">
+      <Transition name="view" mode="out-in">
+        <LoginCard
+          v-if="!session"
+          key="login"
+          :loading="loading"
+          :error="loginError"
+          @submit="handleLogin"
+          @clear-error="loginError = ''"
+        />
+
+        <div v-else key="dashboard" class="dashboard">
+          <section class="hero card">
+            <div class="hero__top">
+              <div class="ring-wrap">
+                <ProgressRing :value="ringValue" :size="136" :stroke="11" />
+                <div class="ring-center">
+                  <span class="ring-center__value">
+                    {{ displayPercent }}<span class="ring-center__unit">%</span>
+                  </span>
+                  <span class="ring-center__label">完成度</span>
+                </div>
+              </div>
+
+              <div class="hero__copy">
+                <p class="eyebrow">通关进度</p>
+                <h1 class="hero__title">
+                  已通关 <span class="hero__num">{{ completedCount }}</span>
+                  <span class="hero__total">/ {{ TOTAL_LEVELS }} 关</span>
+                </h1>
+                <p class="hero__sub">
+                  {{ session.user.name }}<template v-if="session.user.gender"> · {{ session.user.gender }}</template>
+                </p>
+              </div>
+
+              <dl class="hero__meta">
+                <div class="meta">
+                  <dt>当前关卡</dt>
+                  <dd>第 {{ unlocked }} 关</dd>
+                </div>
+                <div class="meta">
+                  <dt>剩余</dt>
+                  <dd>{{ remaining }} 关</dd>
+                </div>
+                <div class="meta">
+                  <dt>满星</dt>
+                  <dd>{{ threeStarCount }} 关</dd>
+                </div>
+              </dl>
+            </div>
+
+            <div class="hero__actions">
+              <button class="btn btn--success" type="button" :disabled="saving" @click="setAllComplete">
+                <UiIcon name="trophy" :size="17" />
+                全部通关
+              </button>
+              <button class="btn btn--danger" type="button" :disabled="saving" @click="resetAll">
+                <UiIcon name="reset" :size="17" />
+                全部清零
+              </button>
+
+              <span class="hero__spacer" />
+
+              <p class="save-state" :class="`is-${saveStatus}`" aria-live="polite">
+                <template v-if="saveStatus === 'saving'">
+                  <span class="pulse-dot" aria-hidden="true" />保存中…
+                </template>
+                <template v-else-if="saveStatus === 'saved'">
+                  <UiIcon name="check" :size="14" />已保存
+                </template>
+                <template v-else-if="saveStatus === 'error'">保存失败</template>
+              </p>
+
+              <button class="btn btn--ghost" type="button" @click="certOpen = true">
+                <UiIcon name="award" :size="17" />
+                我的证书
+              </button>
+
+              <button class="btn btn--primary" type="button" :disabled="saving" @click="openSheet()">
+                <UiIcon name="sliders" :size="17" />
+                自定义修改
+              </button>
+            </div>
+          </section>
+
+          <section class="levels-card card">
+            <header class="section-head">
+              <div>
+                <h2 class="section-title">关卡星级</h2>
+                <p class="section-sub">点击任意关卡，直接修改它的星级。</p>
+              </div>
+              <ul class="legend" aria-hidden="true">
+                <li><span class="legend__dot legend__dot--done" />已完成</li>
+                <li><span class="legend__dot legend__dot--current" />当前</li>
+                <li><span class="legend__dot legend__dot--locked" />未解锁</li>
+              </ul>
+            </header>
+
+            <LevelGrid
+              :total="TOTAL_LEVELS"
+              :stars="stars"
+              :unlocked="unlocked"
+              @select="openSheet"
+            />
+          </section>
+
+          <section class="token-card card">
+            <button
+              class="token-toggle"
+              type="button"
+              :aria-expanded="showToken"
+              aria-controls="token-body"
+              @click="showToken = !showToken"
+            >
+              <span class="token-toggle__label">
+                <UiIcon name="key" :size="17" />
+                访问令牌
+                <span class="token-toggle__hint">用于接口调试</span>
+              </span>
+              <UiIcon
+                name="chevron"
+                :size="17"
+                class="token-toggle__chevron"
+                :class="{ 'is-open': showToken }"
+              />
+            </button>
+
+            <Transition name="reveal">
+              <div v-if="showToken" id="token-body" class="token-body">
+                <code class="token-code">{{ session.token }}</code>
+                <button class="btn btn--ghost token-copy" type="button" @click="copyToken">
+                  <UiIcon name="copy" :size="16" />
+                  复制
+                </button>
+              </div>
+            </Transition>
+          </section>
+        </div>
+      </Transition>
+    </main>
+
+    <footer class="foot">
+      <p>进度会同步到服务器 · 数据仅用于关卡查询</p>
+    </footer>
+
+    <CustomSheet
+      :open="sheetOpen"
+      :total-levels="TOTAL_LEVELS"
+      :unlocked="unlocked"
+      :stars="stars"
+      :saving="saving"
+      :initial-level="sheetTarget"
+      @close="closeSheet"
+      @save-unlocked="setCurrentLevel"
+      @save-stars="applyStars"
+    />
+
+    <CertificateDialog
+      :open="certOpen"
+      :user="session?.user || {}"
+      :stars="stars"
+      :total-levels="TOTAL_LEVELS"
+      @close="certOpen = false"
+      @notify="pushToast"
+    />
+
+    <ToastHost :toasts="toasts" @dismiss="dismissToast" @action="handleToastAction" />
+  </div>
+</template>
+
 <style>
-* {
-  margin: 0;
-  padding: 0;
-  box-sizing: border-box;
+.view-enter-active {
+  transition:
+    opacity 0.3s ease,
+    transform 0.44s var(--ease-out);
 }
 
-html, body {
-  width: 100%;
-  height: 100%;
-  overflow-x: hidden;
+.view-leave-active {
+  transition:
+    opacity 0.16s ease,
+    transform 0.2s ease;
 }
 
-@keyframes spin {
-  to { transform: rotate(360deg); }
+.view-enter-from {
+  opacity: 0;
+  transform: translateY(12px);
 }
 
-@keyframes fadeIn {
-  from { opacity: 0; transform: translateY(-10px); }
-  to { opacity: 1; transform: translateY(0); }
+.view-leave-to {
+  opacity: 0;
+  transform: translateY(-6px) scale(0.99);
+}
+
+@keyframes dashboard-rise {
+  from {
+    opacity: 0;
+    transform: translateY(14px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
 }
 </style>
 
 <style scoped>
-.app-container {
-  min-height: 100vh;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  padding: 20px;
-}
-
-.container {
-  background: white;
-  border-radius: 16px;
-  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
-  padding: 40px;
-  max-width: 1000px;
-  width: 100%;
-  animation: fadeIn 0.5s ease-out;
-}
-
-.header {
-  text-align: center;
-  margin-bottom: 30px;
-}
-
-.header h1 {
-  color: #333;
-  font-size: 32px;
-  margin-bottom: 8px;
-}
-
-.subtitle {
-  color: #666;
-  font-size: 15px;
-}
-
-.login-form {
-  background: #f8f9fa;
-  padding: 25px;
-  border-radius: 12px;
-  margin-bottom: 30px;
-}
-
-.form-group {
-  margin-bottom: 20px;
-}
-
-label {
-  display: block;
-  color: #555;
-  margin-bottom: 8px;
-  font-weight: 600;
-  font-size: 15px;
-}
-
-.password-wrapper {
+.app {
   position: relative;
+  display: flex;
+  flex-direction: column;
+  min-height: 100dvh;
+  isolation: isolate;
 }
 
-.password-hint {
-  position: absolute;
-  right: 12px;
-  top: 50%;
-  transform: translateY(-50%);
-  color: #667eea;
-  font-size: 12px;
-  background: white;
-  padding: 2px 8px;
-  border-radius: 4px;
+.ambient {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
   pointer-events: none;
-  font-weight: 500;
+  background:
+    radial-gradient(52rem 34rem at 12% -12%, var(--aurora-1), transparent 62%),
+    radial-gradient(46rem 32rem at 88% -4%, var(--aurora-2), transparent 64%),
+    radial-gradient(48rem 36rem at 50% 118%, var(--aurora-3), transparent 62%),
+    linear-gradient(180deg, var(--canvas) 0%, var(--canvas-2) 100%);
 }
 
-input[type='text'],
-input[type='password'],
-input[type='number'] {
+.scroll-sentinel {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 1px;
+  height: 1px;
+}
+
+/* ---------------------------------------------------------------- header */
+.topbar {
+  position: sticky;
+  top: 0;
+  z-index: 50;
+  padding: 10px 20px 0;
+}
+
+.topbar__inner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
   width: 100%;
-  padding: 12px 16px;
-  border: 2px solid #e0e0e0;
-  border-radius: 8px;
-  font-size: 15px;
-  transition: all 0.3s;
-  background: white;
+  max-width: 980px;
+  height: 56px;
+  margin: 0 auto;
+  padding: 0 12px 0 8px;
+  border: 1px solid transparent;
+  border-radius: 18px;
+  transition:
+    background-color 0.3s ease,
+    border-color 0.3s ease,
+    box-shadow 0.3s ease,
+    -webkit-backdrop-filter 0.3s ease,
+    backdrop-filter 0.3s ease;
 }
 
-input:focus {
-  outline: none;
-  border-color: #667eea;
-  box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+.topbar.is-scrolled .topbar__inner {
+  background: var(--glass);
+  border-color: var(--glass-border);
+  -webkit-backdrop-filter: blur(22px) saturate(180%);
+  backdrop-filter: blur(22px) saturate(180%);
+  box-shadow: var(--shadow-1);
 }
 
-.btn,
-.btn-primary,
-.btn-action {
-  padding: 14px 24px;
-  border: none;
-  border-radius: 8px;
-  font-size: 15px;
-  font-weight: 600;
-  cursor: pointer;
-  transition: all 0.3s;
-  display: inline-flex;
+@media (prefers-reduced-transparency: reduce) {
+  .topbar.is-scrolled .topbar__inner {
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.brand__mark {
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  flex: none;
+  border-radius: 12px;
+  color: #fff;
+  background: linear-gradient(145deg, var(--accent) 0%, #7c5cff 100%);
+  box-shadow: 0 8px 18px -10px rgba(47, 92, 224, 0.9);
+}
+
+.brand__text {
+  display: grid;
+  gap: 1px;
+  line-height: 1.1;
+}
+
+.brand__name {
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+}
+
+.brand__sub {
+  font-size: 10.5px;
+  letter-spacing: 0.1em;
+  color: var(--text-2);
+}
+
+.topbar__user {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+
+.user-chip {
+  display: flex;
   align-items: center;
   gap: 8px;
-  justify-content: center;
+  height: 36px;
+  padding: 0 12px 0 4px;
+  border: 1px solid var(--hairline);
+  border-radius: 999px;
+  background: var(--surface-2);
+  font-size: 12.5px;
+  white-space: nowrap;
 }
 
-.btn-primary {
-  width: 100%;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  color: white;
-  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3);
-}
-
-.btn-primary:hover:not(:disabled) {
-  transform: translateY(-2px);
-  box-shadow: 0 6px 20px rgba(102, 126, 234, 0.4);
-}
-
-.btn-primary:active {
-  transform: translateY(0);
-}
-
-.btn-primary:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
-}
-
-.loading-spinner {
-  width: 16px;
-  height: 16px;
-  border: 2px solid rgba(255, 255, 255, 0.3);
-  border-top-color: white;
+.user-chip__avatar {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  flex: none;
   border-radius: 50%;
-  animation: spin 0.6s linear infinite;
+  background: var(--accent);
+  color: var(--accent-contrast);
+  font-size: 12px;
+  font-weight: 700;
 }
 
-.result {
-  animation: fadeIn 0.5s ease-out;
+.user-chip__name {
+  font-weight: 600;
 }
 
-.result-header {
-  margin-bottom: 25px;
+.user-chip__class {
+  color: var(--text-2);
 }
 
-.result-title {
+/* ------------------------------------------------------------------ main */
+.main {
   display: flex;
+  flex: 1;
+  justify-content: center;
+  width: 100%;
+  max-width: 980px;
+  margin: 0 auto;
+  padding: 22px 20px 0;
+}
+
+.main--login {
+  align-items: flex-start;
+  padding-block: 24px;
+}
+
+.main--login > * {
+  margin-block: auto;
+}
+
+.dashboard {
+  display: grid;
+  gap: 16px;
+  width: 100%;
+  align-content: start;
+}
+
+.dashboard > * {
+  animation: dashboard-rise 0.6s var(--ease-out) both;
+}
+
+.dashboard > :nth-child(2) {
+  animation-delay: 0.06s;
+}
+
+.dashboard > :nth-child(3) {
+  animation-delay: 0.12s;
+}
+
+/* ------------------------------------------------------------------ hero */
+.hero {
+  display: grid;
+  gap: 22px;
+  padding: 28px;
+}
+
+.hero__top {
+  display: grid;
+  grid-template-columns: 136px minmax(0, 1fr);
+  grid-template-rows: auto auto;
   align-items: center;
-  gap: 12px;
-  margin-bottom: 15px;
+  column-gap: 30px;
 }
 
-.result-title h2 {
-  color: #333;
-  font-size: 24px;
-  margin: 0;
+.ring-wrap {
+  position: relative;
+  grid-column: 1;
+  grid-row: 1 / span 2;
+  width: 136px;
+  height: 136px;
 }
 
-.user-badge {
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  color: white;
-  padding: 4px 12px;
-  border-radius: 20px;
+.ring-center {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-content: center;
+  gap: 3px;
+  text-align: center;
+}
+
+.ring-center__value {
+  font-size: 30px;
+  font-weight: 700;
+  letter-spacing: -0.03em;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+
+.ring-center__unit {
+  margin-left: 1px;
   font-size: 14px;
   font-weight: 600;
+  letter-spacing: 0;
+  color: var(--text-3);
 }
 
-.action-buttons {
-  display: flex;
-  gap: 10px;
-  flex-wrap: wrap;
+.ring-center__label {
+  font-size: 10.5px;
+  letter-spacing: 0.12em;
+  color: var(--text-3);
 }
 
-.btn-action {
-  flex: 1;
-  min-width: 140px;
-  padding: 12px 20px;
-}
-
-.btn-action .btn-icon {
-  font-size: 18px;
-}
-
-.btn-complete {
-  background: linear-gradient(135deg, #28a745 0%, #20c997 100%);
-  color: white;
-  box-shadow: 0 4px 12px rgba(40, 167, 69, 0.3);
-}
-
-.btn-reset {
-  background: linear-gradient(135deg, #ffc107 0%, #ff9800 100%);
-  color: #fff;
-  box-shadow: 0 4px 12px rgba(255, 193, 7, 0.3);
-}
-
-.btn-custom {
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  color: white;
-  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3);
-}
-
-.btn-action:hover {
-  transform: translateY(-2px);
-  opacity: 0.95;
-}
-
-.info-grid {
+.hero__copy {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-  gap: 15px;
-  margin-bottom: 25px;
+  grid-column: 2;
+  grid-row: 1;
+  gap: 7px;
+  min-width: 0;
 }
 
-.info-card {
-  background: #f8f9fa;
-  border-radius: 12px;
-  padding: 20px;
-  display: flex;
-  gap: 15px;
-  align-items: flex-start;
-  transition: all 0.3s;
+.hero__title {
+  font-size: clamp(26px, 3.4vw, 34px);
+  line-height: 1.08;
+  font-weight: 700;
+  letter-spacing: -0.022em;
 }
 
-.info-card:hover {
-  background: #f0f4ff;
-  transform: translateY(-2px);
-  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.1);
+.hero__num {
+  font-variant-numeric: tabular-nums;
 }
 
-.info-icon {
-  font-size: 32px;
-  line-height: 1;
-}
-
-.info-content {
-  flex: 1;
-}
-
-.info-label {
-  color: #666;
+.hero__total {
+  font-size: 0.58em;
   font-weight: 600;
-  font-size: 13px;
-  margin-bottom: 8px;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
+  letter-spacing: -0.01em;
+  color: var(--text-3);
 }
 
-.info-details {
-  color: #333;
-  font-size: 16px;
+.hero__sub {
+  font-size: 14px;
+  color: var(--text-2);
+}
+
+.hero__meta {
   display: flex;
-  align-items: center;
+  grid-column: 2;
+  grid-row: 2;
+  align-self: start;
+  gap: 30px;
+  margin: 12px 0 0;
   flex-wrap: wrap;
-  gap: 8px;
 }
 
-.info-item {
-  font-weight: 500;
-}
-
-.info-item.highlight {
-  color: #667eea;
-  font-weight: 700;
-}
-
-.info-divider {
-  color: #ccc;
-}
-
-.levels-section {
-  margin-bottom: 25px;
-}
-
-.section-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 20px;
-  flex-wrap: wrap;
-  gap: 15px;
-}
-
-.section-header h3 {
-  color: #333;
-  font-size: 20px;
-  margin: 0;
-}
-
-.progress-bar {
-  position: relative;
-  width: 200px;
-  height: 24px;
-  background: #e0e0e0;
-  border-radius: 12px;
-  overflow: hidden;
-}
-
-.progress-fill {
-  position: absolute;
-  height: 100%;
-  background: linear-gradient(90deg, #28a745 0%, #20c997 100%);
-  transition: width 0.5s ease;
-}
-
-.progress-text {
-  position: absolute;
-  width: 100%;
-  text-align: center;
-  line-height: 24px;
-  font-size: 12px;
-  font-weight: 700;
-  color: #333;
-  z-index: 1;
-}
-
-.stars-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
-  gap: 12px;
-}
-
-.level-card {
-  background: white;
-  padding: 16px 12px;
-  border-radius: 10px;
-  text-align: center;
-  border: 2px solid #e0e0e0;
-  transition: all 0.3s;
-  position: relative;
-}
-
-.level-card.completed {
-  border-color: #ffd700;
-  background: linear-gradient(135deg, #fff9e6 0%, #fffbf0 100%);
-}
-
-.level-card.unlocked {
-  border-color: #667eea;
-  background: linear-gradient(135deg, #f0f4ff 0%, #e8eeff 100%);
-  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.2);
-}
-
-.level-card:hover {
-  transform: translateY(-3px);
-  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.1);
-}
-
-.level-number {
-  font-weight: 700;
-  color: #667eea;
-  font-size: 18px;
-  margin-bottom: 8px;
-}
-
-.stars {
-  font-size: 20px;
-  letter-spacing: 2px;
-  margin: 8px 0;
-}
-
-.unlocked-badge {
-  display: inline-block;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  color: white;
-  padding: 3px 10px;
-  border-radius: 12px;
+.meta dt {
+  margin-bottom: 2px;
   font-size: 11px;
-  margin-top: 6px;
+  letter-spacing: 0.08em;
+  color: var(--text-3);
+}
+
+.meta dd {
+  margin: 0;
+  font-size: 15px;
   font-weight: 600;
+  letter-spacing: -0.005em;
+  font-variant-numeric: tabular-nums;
 }
 
-.token-section {
-  background: #f8f9fa;
-  padding: 15px;
-  border-radius: 10px;
+.hero__actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding-top: 20px;
+  border-top: 1px solid var(--hairline);
+  flex-wrap: wrap;
 }
 
-.token-section details {
+.hero__spacer {
+  flex: 1 1 auto;
+}
+
+.save-state {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 62px;
+  margin-right: 4px;
+  font-size: 12px;
+  color: var(--text-3);
+  font-variant-numeric: tabular-nums;
+}
+
+.save-state.is-saved {
+  color: var(--success);
+}
+
+.save-state.is-error {
+  color: var(--danger);
+}
+
+.pulse-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--accent);
+  animation: pulse 1.1s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%,
+  100% {
+    opacity: 0.35;
+    transform: scale(0.8);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+/* ---------------------------------------------------------------- levels */
+.levels-card {
+  padding: 24px 24px 26px;
+}
+
+.section-head {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 18px;
+}
+
+.section-title {
+  font-size: 18px;
+  font-weight: 700;
+  letter-spacing: -0.012em;
+}
+
+.section-sub {
+  margin-top: 3px;
+  font-size: 12.5px;
+  color: var(--text-3);
+}
+
+.legend {
+  display: flex;
+  gap: 14px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 11.5px;
+  color: var(--text-3);
+}
+
+.legend li {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+
+.legend__dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+
+.legend__dot--done {
+  background: var(--star);
+}
+
+.legend__dot--current {
+  background: var(--accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 16%, transparent);
+}
+
+.legend__dot--locked {
+  background: var(--surface-3);
+  box-shadow: inset 0 0 0 1px var(--hairline-strong);
+}
+
+/* ----------------------------------------------------------------- token */
+.token-card {
+  padding: 6px;
+}
+
+.token-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  padding: 14px 16px;
+  border: 0;
+  border-radius: 22px;
+  background: transparent;
+  color: var(--text-2);
+  text-align: left;
   cursor: pointer;
+  transition: background-color 0.18s ease, color 0.18s ease;
 }
 
-.token-section summary {
+.token-toggle:hover {
+  background: var(--surface-2);
+  color: var(--text);
+}
+
+.token-toggle__label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13.5px;
   font-weight: 600;
-  color: #555;
-  user-select: none;
-  padding: 5px;
 }
 
-.token-section summary:hover {
-  color: #667eea;
+.token-toggle__hint {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-3);
+}
+
+.token-toggle__chevron {
+  color: var(--text-3);
+  transition: transform 0.3s var(--ease-out);
+}
+
+.token-toggle__chevron.is-open {
+  transform: rotate(180deg);
+}
+
+.token-body {
+  display: flex;
+  gap: 8px;
+  padding: 0 10px 10px;
+  align-items: stretch;
 }
 
 .token-code {
-  display: block;
-  margin-top: 10px;
+  flex: 1;
+  min-width: 0;
   padding: 12px;
-  background: #fff;
-  border: 1px solid #e0e0e0;
-  border-radius: 6px;
+  border: 1px solid var(--hairline);
+  border-radius: 12px;
+  background: var(--surface-2);
+  color: var(--text-2);
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  line-height: 1.55;
   word-break: break-all;
-  font-family: 'Courier New', monospace;
-  font-size: 12px;
-  color: #555;
 }
 
-.alert {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 14px 18px;
-  border-radius: 10px;
-  margin-top: 15px;
-  font-weight: 500;
-  animation: fadeIn 0.3s ease-out;
+.token-copy {
+  flex: none;
+  padding: 0 14px;
 }
 
-.alert-icon {
-  font-size: 20px;
+.reveal-enter-active,
+.reveal-leave-active {
+  transition:
+    opacity 0.2s ease,
+    transform 0.32s var(--ease-out);
 }
 
-.alert-error {
-  background: #fee;
-  color: #c33;
-  border-left: 4px solid #c33;
-}
-
-.alert-success {
-  background: #d4edda;
-  color: #155724;
-  border-left: 4px solid #28a745;
-}
-
-.fade-enter-active, .fade-leave-active {
-  transition: all 0.3s ease;
-}
-
-.fade-enter-from, .fade-leave-to {
+.reveal-enter-from,
+.reveal-leave-to {
   opacity: 0;
-  transform: translateY(-10px);
+  transform: translateY(-5px);
 }
 
-.modal-overlay {
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background: rgba(0, 0, 0, 0.6);
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  z-index: 1000;
-  backdrop-filter: blur(4px);
+/* ------------------------------------------------------------------ foot */
+.foot {
+  padding: 30px 20px 34px;
+  text-align: center;
+  font-size: 11.5px;
+  color: var(--text-2);
 }
 
-.modal-content {
-  background: white;
-  border-radius: 16px;
-  padding: 0;
-  max-width: 700px;
-  width: 90%;
-  max-height: 85vh;
-  overflow: hidden;
-  box-shadow: 0 25px 80px rgba(0, 0, 0, 0.3);
-  display: flex;
-  flex-direction: column;
-}
-
-.modal-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 25px 30px;
-  border-bottom: 2px solid #f0f0f0;
-}
-
-.modal-header h3 {
-  color: #333;
-  margin: 0;
-  font-size: 22px;
-}
-
-.modal-close {
-  width: 36px;
-  height: 36px;
-  border: none;
-  background: #f0f0f0;
-  border-radius: 50%;
-  font-size: 24px;
-  line-height: 1;
-  cursor: pointer;
-  color: #666;
-  transition: all 0.2s;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.modal-close:hover {
-  background: #667eea;
-  color: white;
-  transform: rotate(90deg);
-}
-
-.modal-body {
-  padding: 25px 30px;
-  overflow-y: auto;
-  flex: 1;
-}
-
-.modal-section {
-  margin-bottom: 30px;
-}
-
-.modal-section:last-child {
-  margin-bottom: 0;
-}
-
-.modal-label {
-  display: block;
-  color: #333;
-  font-weight: 700;
-  margin-bottom: 15px;
-  font-size: 16px;
-}
-
-.level-select {
-  display: grid;
-  grid-template-columns: repeat(10, 1fr);
-  gap: 8px;
-}
-
-.radio-label,
-.checkbox-label {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 10px;
-  border: 2px solid #e0e0e0;
-  border-radius: 8px;
-  cursor: pointer;
-  transition: all 0.2s;
-  font-size: 14px;
-  font-weight: 600;
-  background: white;
-}
-
-.radio-label:hover,
-.checkbox-label:hover {
-  border-color: #667eea;
-  background: #f0f4ff;
-}
-
-.radio-label.active,
-.checkbox-label.active {
-  border-color: #667eea;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  color: white;
-}
-
-.radio-label input,
-.checkbox-label input {
-  display: none;
-}
-
-.level-checkboxes {
-  display: grid;
-  grid-template-columns: repeat(5, 1fr);
-  gap: 8px;
-  margin-bottom: 20px;
-}
-
-.star-input-group {
-  display: flex;
-  align-items: center;
-  gap: 15px;
-  padding: 15px;
-  background: #f8f9fa;
-  border-radius: 10px;
-}
-
-.star-input-group label {
-  font-weight: 600;
-  color: #555;
-  margin: 0;
-}
-
-.star-selector {
-  display: flex;
-  gap: 8px;
-  flex: 1;
-}
-
-.star-btn {
-  flex: 1;
-  padding: 10px 15px;
-  border: 2px solid #e0e0e0;
-  background: white;
-  border-radius: 8px;
-  cursor: pointer;
-  font-weight: 600;
-  transition: all 0.2s;
-  font-size: 14px;
-}
-
-.star-btn:hover {
-  border-color: #667eea;
-  background: #f0f4ff;
-}
-
-.star-btn.active {
-  border-color: #667eea;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  color: white;
-}
-
-.modal-actions {
-  display: flex;
-  gap: 10px;
-  padding: 20px 30px;
-  border-top: 2px solid #f0f0f0;
-  background: #f8f9fa;
-}
-
-.btn-modal {
-  flex: 1;
-  padding: 12px 20px;
-  border: none;
-  border-radius: 8px;
-  font-size: 15px;
-  font-weight: 600;
-  cursor: pointer;
-  transition: all 0.2s;
-}
-
-.btn-modal.btn-primary {
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  color: white;
-}
-
-.btn-modal.btn-primary:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
-.btn-modal.btn-secondary {
-  background: #6c757d;
-  color: white;
-}
-
-.btn-modal:hover:not(:disabled) {
-  transform: translateY(-2px);
-  opacity: 0.95;
-}
-
-.modal-enter-active, .modal-leave-active {
-  transition: all 0.3s ease;
-}
-
-.modal-enter-from, .modal-leave-to {
-  opacity: 0;
-}
-
-.modal-enter-from .modal-content,
-.modal-leave-to .modal-content {
-  transform: scale(0.9) translateY(20px);
-}
-
-@media (max-width: 768px) {
-  .container {
-    padding: 25px;
+/* -------------------------------------------------------------- responsive */
+@media (max-width: 720px) {
+  .topbar {
+    padding: 8px 12px 0;
   }
 
-  .action-buttons {
-    flex-direction: column;
+  .topbar__inner {
+    padding: 0 8px 0 6px;
   }
 
-  .btn-action {
-    width: 100%;
+  .main {
+    padding: 16px 14px 0;
   }
 
-  .info-grid {
-    grid-template-columns: 1fr;
+  .hero {
+    padding: 22px;
+    gap: 20px;
   }
 
-  .section-header {
+  .hero__top {
+    grid-template-columns: 104px minmax(0, 1fr);
+    grid-template-rows: auto auto;
+    column-gap: 16px;
+  }
+
+  .ring-wrap {
+    grid-row: 1;
+    width: 104px;
+    height: 104px;
+  }
+
+  .hero__meta {
+    grid-column: 1 / -1;
+    grid-row: 2;
+    gap: 22px;
+    margin-top: 14px;
+  }
+
+  .ring-center__value {
+    font-size: 22px;
+  }
+
+  .ring-center__unit {
+    font-size: 11px;
+  }
+
+  .ring-center__label {
+    font-size: 9.5px;
+    letter-spacing: 0.08em;
+  }
+
+  .hero__title {
+    font-size: 24px;
+  }
+
+  .hero__sub {
+    font-size: 13px;
+  }
+
+  .hero__actions {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .hero__spacer,
+  .save-state {
+    display: none;
+  }
+
+  .levels-card {
+    padding: 20px 16px 22px;
+  }
+
+  .section-head {
     flex-direction: column;
     align-items: flex-start;
+    gap: 10px;
   }
 
-  .progress-bar {
-    width: 100%;
+  .legend {
+    gap: 12px;
   }
 
-  .stars-grid {
-    grid-template-columns: repeat(auto-fill, minmax(80px, 1fr));
+  .user-chip__class {
+    display: none;
   }
 
-  .level-select {
-    grid-template-columns: repeat(5, 1fr);
+  .token-toggle__hint {
+    display: none;
   }
 
-  .level-checkboxes {
-    grid-template-columns: repeat(3, 1fr);
+  .foot {
+    padding: 24px 20px 28px;
+  }
+}
+
+@media (max-width: 480px) {
+  .brand__sub {
+    display: none;
   }
 
-  .modal-actions {
+  .token-body {
     flex-direction: column;
+  }
+
+  .token-copy {
+    width: 100%;
   }
 }
 </style>
