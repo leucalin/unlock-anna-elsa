@@ -42,11 +42,21 @@ const animatedPercent = useSpringValue(() => percent.value, {
 const displayPercent = computed(() => Math.round(animatedPercent.value))
 const ringValue = computed(() => animatedPercent.value / 100)
 
+function upstreamMessage(error) {
+  const data = error?.data
+  if (data && typeof data === 'object') return data.msg || data.message || ''
+  return ''
+}
+
 function describeError(error, fallback) {
   const status = error?.statusCode ?? error?.status
-  if (status === 500 || status === 502 || status === 503) {
-    return '服务暂时不可用，请稍后重试。'
-  }
+  const message = upstreamMessage(error)
+
+  if (message) return message
+  if (status === 400 || status === 401 || status === 403) return '姓名或密码不正确。'
+  if (status === 429) return '尝试次数过多，请稍后再试。'
+  if (status === 502 || status === 503 || status === 504) return '无法连接官方服务器，请稍后重试。'
+  if (status === 500) return '服务暂时不可用，请稍后重试。'
   if (/fetch|network|socket|timed? ?out/i.test(error?.message || '')) {
     return '网络连接失败，请检查网络后重试。'
   }
@@ -148,9 +158,17 @@ async function persist(next) {
   } catch (error) {
     setProgress(previous)
     saveStatus.value = 'error'
+
+    const status = error?.statusCode ?? error?.status
+    const reason = (
+      status === 401 || status === 403
+        ? upstreamMessage(error) || '登录已过期，请退出后重新查询'
+        : describeError(error, '保存失败')
+    ).replace(/[。.!！?？]+$/, '')
+
     pushToast({
       tone: 'error',
-      message: describeError(error, '保存失败，已恢复修改前的进度。'),
+      message: `${reason}，已恢复修改前的进度。`,
     })
     return false
   } finally {

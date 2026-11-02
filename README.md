@@ -86,6 +86,9 @@ NUXT_GAME_API_BASE=http://222.243.213.67:17770
 | --- | --- | --- |
 | `POST` | `/api/login` | 请求体 `{ name, pwd }`，返回 `{ ok, token, user, progress }` |
 | `POST` | `/api/progress` | 请求头 `Authorization: Bearer <token>`，请求体 `{ progress }` |
+| `GET` | `/api/health` | 服务端到官方服务器的连通性自检 |
+
+登录与进度接口会**保留官方的状态码和 `msg`**（例如 401 密码错误、429 频率限制），只有网络不可达时才返回 502。这样账号问题不会再被误报成 500。
 
 `progress` 结构：
 
@@ -132,9 +135,29 @@ public/
 docs/ui-preview/          # README 预览图
 ```
 
+## Vercel 部署
+
+部署后打开：
+
+```
+https://<你的域名>/api/health
+```
+
+正常返回示例：
+
+```json
+{ "ok": true, "upstream": "http://222.243.213.67:17770", "status": 200, "ms": 320, "userCount": 42 }
+```
+
+- `ok: true, status: 200`：链路正常；登录失败时看接口返回的 `msg`，通常是账号、密码或频率限制。
+- `ok: false, status: 0`：Vercel 函数连不上官方服务器。可以在 Vercel 项目设置里把 Function Region 调到离服务器更近的区域（如香港），或使用国内中转。
+- 若在 Vercel 设置了 `NUXT_GAME_API_BASE`，请确认使用 `http://`、端口 `17770`，且路径不要以 `/` 结尾。
+- 环境变量修改后需要重新部署才会生效。
+
 ## 部署提示
 
 - 官方接口是 HTTP，建议在反向代理上启用 HTTPS，避免令牌明文传输。
+- 如果 `/api/health` 的 `status` 为 0，说明是 Vercel 出站网络问题，而不是账号问题。
 - 登录令牌只保存在当前页面的内存中，刷新后需要重新登录；不存在本地存储或 Cookie。
 - 如果官方地址变更，只需设置 `NUXT_GAME_API_BASE`，无需改代码。
 - 本工具是官方游戏的配套页面，不是官方游戏本体；进度读写均走官方 API。
